@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>GabiPlant</title>
+  <style>
+    body { font-family: system-ui, Arial, sans-serif; margin: 0; padding: 24px; background:#0f172a; color:#e2e8f0; }
+    .card { max-width: 520px; margin: 0 auto; background:#111827; border-radius: 16px; padding: 24px; box-shadow: 0 10px 30px rgba(0,0,0,.3); }
+    h1 { margin: 0 0 8px; font-size: 24px; font-weight: 700; }
+    .status { font-size: 64px; font-weight: 800; margin: 12px 0; }
+    .ok { color:#22c55e; }
+    .warn { color:#ef4444; }
+    .meta { opacity:.8; line-height:1.6; }
+    .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; background:#22c55e; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>🌱 GabiPlant</h1>
+    <div id="status" class="status">...</div>
+    <div class="meta" id="meta"></div>
+  </div>
+
+  <script>
+    async function load() {
+      try {
+        const r = await fetch('/api/status', {cache:'no-store'});
+        const d = await r.json();
+        const s = document.getElementById('status');
+        const m = document.getElementById('meta');
+        const ok = (d.status || '').toUpperCase() === 'OK';
+        s.textContent = ok ? 'OK' : 'PODLEJ';
+        s.className = 'status ' + (ok ? 'ok' : 'warn');
+        m.innerHTML = `
+          <div><span class="dot" style="background:${ok?'#22c55e':'#ef4444'}"></span>
+               Roślina: <b>${d.device_id || 'gabiplant-1'}</b></div>
+          <div>Wilgotność: <b>${(d.pct ?? 0).toFixed(1)}%</b> (RAW=${d.raw})</div>
+          <div>Ostatnia aktualizacja: <b>${d.timestamp_utc}</b></div>
+          <div>Serwer: <b>${d.server_time_utc}</b></div>
+        `;
+      } catch (e) {
+        document.getElementById('status').textContent = 'BŁĄD';
+        document.getElementById('status').className = 'status warn';
+        document.getElementById('meta').textContent = e;
+      }
+    }
+    load();
+    setInterval(load, 5000); // odświeżaj co 5 s
+  </script>
+</body>
+</html>
