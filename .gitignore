@@ -1,0 +1,16 @@
+# venvy
+.venv/
+plant-server/venv/
+
+# dane i wrażliwe pliki
+plant-logger/data/config.json
+plant-logger/data/latest.json
+plant-logger/data/series_week.json
+plant-logger/data/forecast.json
+plant-logger/data/measurements_*.csv
+plant-logger/data/*.log
+
+# cache/bajery
+__pycache__/
+*.pyc
+logs/

@@ -5,48 +5,283 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>GabiPlant</title>
   <style>
-    body { font-family: system-ui, Arial, sans-serif; margin: 0; padding: 24px; background:#0f172a; color:#e2e8f0; }
-    .card { max-width: 520px; margin: 0 auto; background:#111827; border-radius: 16px; padding: 24px; box-shadow: 0 10px 30px rgba(0,0,0,.3); }
+    :root{
+      --bg:#0f172a; --card:#111827; --text:#e2e8f0; --ok:#22c55e; --warn:#ef4444; --muted:#94a3b8;
+    }
+    body { font-family: system-ui, Arial, sans-serif; margin: 0; padding: 24px; background:var(--bg); color:var(--text); }
+    .card { max-width: 640px; margin: 0 auto 16px; background:var(--card); border-radius: 16px; padding: 24px; box-shadow: 0 10px 30px rgba(0,0,0,.3); }
     h1 { margin: 0 0 8px; font-size: 24px; font-weight: 700; }
     .status { font-size: 64px; font-weight: 800; margin: 12px 0; }
-    .ok { color:#22c55e; }
-    .warn { color:#ef4444; }
-    .meta { opacity:.8; line-height:1.6; }
-    .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; background:#22c55e; }
+    .ok { color:var(--ok); }
+    .warn { color:var(--warn); }
+    .meta { opacity:.9; line-height:1.6; }
+    .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; background:var(--ok); }
+    .row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+    label { display:flex; flex-direction:column; gap:6px; font-size:14px; color:var(--muted); }
+    input[type="number"] { width:140px; padding:10px 12px; border-radius:10px; border:1px solid #334155; background:#0b1220; color:var(--text); }
+    button { padding:10px 14px; border:0; border-radius:10px; background:#2563eb; color:white; font-weight:600; cursor:pointer; }
+    button[disabled]{ opacity:.6; cursor:not-allowed; }
+    .msg { margin-left:8px; font-size:14px; color:var(--muted); }
+    hr { border:0; border-top:1px solid #1f2937; margin:16px 0; }
+    .small { font-size:13px; color:var(--muted); }
   </style>
 </head>
 <body>
+  <!-- KARTA STATUSU -->
   <div class="card">
     <h1>🌱 GabiPlant</h1>
     <div id="status" class="status">...</div>
     <div class="meta" id="meta"></div>
   </div>
 
+  <!-- KARTA USTAWIEŃ -->
+  <div class="card">
+    <h2 style="margin:0 0 12px">Ustawienia podlewania</h2>
+    <form id="cfgForm" class="row" autocomplete="off">
+      <label>
+        Próg „PODLEJ” [%]
+        <input type="number" step="0.1" min="0" max="100" id="thresh_on" required>
+      </label>
+      <label>
+        Histereza powrotu [%]
+        <input type="number" step="0.1" min="0" max="50" id="hysteresis" required>
+      </label>
+      <div class="row">
+        <button id="saveBtn" type="submit">Zapisz</button>
+        <span id="cfgMsg" class="msg"></span>
+      </div>
+    </form>
+    <hr>
+    <div class="small" id="effInfo">Progi efektywne: —</div>
+  </div>
+
   <script>
-    async function load() {
+    async function fetchJSON(url, opts){
+      const r = await fetch(url, {...opts, cache:'no-store'});
+      if(!r.ok) throw new Error(await r.text());
+      return r.json();
+    }
+
+    async function loadStatus() {
       try {
-        const r = await fetch('/api/status', {cache:'no-store'});
-        const d = await r.json();
+        const d = await fetchJSON('/api/status');
         const s = document.getElementById('status');
         const m = document.getElementById('meta');
         const ok = (d.status || '').toUpperCase() === 'OK';
+
         s.textContent = ok ? 'OK' : 'PODLEJ';
         s.className = 'status ' + (ok ? 'ok' : 'warn');
+
+        const cfg = d.config || {};
+        const on = Number(cfg.thresh_on ?? 30);
+        const hyst = Number(cfg.hysteresis ?? 5);
+        const off = Math.min(100, on + hyst);
+
         m.innerHTML = `
-          <div><span class="dot" style="background:${ok?'#22c55e':'#ef4444'}"></span>
+          <div><span class="dot" style="background:${ok?'var(--ok)':'var(--warn)'}"></span>
                Roślina: <b>${d.device_id || 'gabiplant-1'}</b></div>
-          <div>Wilgotność: <b>${(d.pct ?? 0).toFixed(1)}%</b> (RAW=${d.raw})</div>
+          <div>Wilgotność: <b>${(d.pct ?? 0).toFixed(1)}%</b> (RAW=${d.raw}, ${d.millivolts ?? '?'} mV)</div>
+          <div>Progi: <b>PODLEJ &lt; ${on.toFixed(1)}%</b>, <b>OK &gt; ${off.toFixed(1)}%</b> (histereza ${hyst.toFixed(1)}%)</div>
           <div>Ostatnia aktualizacja: <b>${d.timestamp_utc}</b></div>
           <div>Serwer: <b>${d.server_time_utc}</b></div>
         `;
+
+        // jeśli formularz niezaładowany jeszcze – wstaw wartości
+        if (!document.getElementById('thresh_on').dataset.filled) {
+          document.getElementById('thresh_on').value = on.toFixed(1);
+          document.getElementById('hysteresis').value = hyst.toFixed(1);
+          document.getElementById('thresh_on').dataset.filled = "1";
+          document.getElementById('effInfo').textContent =
+            `Progi efektywne: PODLEJ < ${on.toFixed(1)}%  |  OK > ${off.toFixed(1)}%`;
+        }
+
       } catch (e) {
-        document.getElementById('status').textContent = 'BŁĄD';
-        document.getElementById('status').className = 'status warn';
+        const s = document.getElementById('status');
+        s.textContent = 'BŁĄD';
+        s.className = 'status warn';
         document.getElementById('meta').textContent = e;
       }
     }
-    load();
-    setInterval(load, 5000); // odświeżaj co 5 s
+
+    async function loadConfigDirect(){ // używane przy pierwszym wejściu, gdy /api/status jest 404
+      try{
+        const cfg = await fetchJSON('/api/config');
+        const on = Number(cfg.thresh_on ?? 30);
+        const hyst = Number(cfg.hysteresis ?? 5);
+        document.getElementById('thresh_on').value = on.toFixed(1);
+        document.getElementById('hysteresis').value = hyst.toFixed(1);
+        document.getElementById('thresh_on').dataset.filled = "1";
+        document.getElementById('effInfo').textContent =
+          `Progi efektywne: PODLEJ < ${on.toFixed(1)}%  |  OK > ${(Math.min(100,on+hyst)).toFixed(1)}%`;
+      }catch(e){}
+    }
+
+    document.getElementById('cfgForm').addEventListener('submit', async (e)=>{
+      e.preventDefault();
+      const btn = document.getElementById('saveBtn');
+      const msg = document.getElementById('cfgMsg');
+      const thresh_on  = parseFloat(document.getElementById('thresh_on').value);
+      const hysteresis = parseFloat(document.getElementById('hysteresis').value);
+
+      if (isNaN(thresh_on) || isNaN(hysteresis)) {
+        msg.textContent = 'Podaj liczby.';
+        return;
+      }
+      btn.disabled = true; msg.textContent = 'Zapisuję…';
+      try{
+        await fetchJSON('/api/config', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({thresh_on, hysteresis})
+        });
+        msg.textContent = 'Zapisano ✔';
+        // Odśwież status, żeby zobaczyć nowe progi
+        await loadStatus();
+        setTimeout(()=> msg.textContent='', 1500);
+      }catch(err){
+        msg.textContent = 'Błąd: ' + err.message;
+      }finally{
+        btn.disabled = false;
+      }
+    });
+
+    // start
+    loadStatus().catch(loadConfigDirect);
+    setInterval(loadStatus, 5000); // odświeżaj co 5 s
   </script>
+
+  <!-- CHART: Ostatni tydzień -->
+<div class="card">
+  <h2 style="margin:0 0 12px">Wilgotność – ostatni tydzień</h2>
+  <canvas id="moistChart" height="120"></canvas>
+  <div id="eta" class="small" style="margin-top:8px;"></div>
+</div>
+
+<!-- Chart.js CDN -->
+<!-- 1) Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<!-- 2) date-fns (silnik dat) -->
+<script src="https://cdn.jsdelivr.net/npm/date-fns@2"></script>
+<!-- 3) adapter do osi czasu -->
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3"></script>
+
+<script>
+async function loadSeries(){
+  const r = await fetch('/api/series/week', {cache:'no-store'});
+  if(!r.ok) throw new Error('Brak series_week.json – uruchom analytics');
+  return r.json();
+}
+async function loadForecast(){
+  const r = await fetch('/api/forecast', {cache:'no-store'});
+  if(!r.ok) throw new Error('Brak forecast.json – uruchom analytics');
+  return r.json();
+}
+let moistChart;
+
+async function renderChart(){
+  try{
+    const [series, fc] = await Promise.all([
+      fetch('/api/series/week',{cache:'no-store'}).then(r=>r.json()),
+      fetch('/api/forecast',{cache:'no-store'}).then(r=>r.json())
+    ]);
+
+    // Dane jako {x: Date, y: number}
+    const pts = (series.points || []).map(p => ({
+      x: new Date(p.t),
+      y: p.pct
+    }));
+    const filledMask = (series.points || []).map(p => !!p.filled);
+
+    const ctx = document.getElementById('moistChart').getContext('2d');
+    if (moistChart) moistChart.destroy();
+
+    moistChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        datasets: [
+          {
+            label: 'Wilgotność [%]',
+            data: pts,
+            borderWidth: 2,
+            pointRadius: 0,
+            // przerywana kreska na interpolowanych fragmentach
+            segment: {
+              borderDash: ctx => (filledMask[ctx.p0DataIndex] || filledMask[ctx.p1DataIndex]) ? [6,6] : []
+            },
+            tension: 0.25
+          },
+          {
+            label: 'Próg PODLEJ',
+            data: pts.map(d => ({x: d.x, y: fc.thresh_on ?? 70})),
+            borderWidth: 1,
+            borderDash: [4,4],
+            pointRadius: 0
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        animation: false,
+        interaction: { mode: 'nearest', intersect: false },
+        scales: {
+          x: {
+            type: 'time',
+            time: {
+              unit: 'day',
+              // ładne formaty osi/tooltipów
+              displayFormats: { day: 'd MMM' }
+            },
+            ticks: {
+              autoSkip: true,
+              maxTicksLimit: 8,
+              maxRotation: 0,
+              callback: (val) => {
+                // val jest timestampem; sformatuj po polsku
+                const d = new Date(val);
+                return d.toLocaleDateString('pl-PL', { day:'2-digit', month:'short' });
+              }
+            },
+            grid: { color: 'rgba(148,163,184,.15)' }
+          },
+          y: {
+            suggestedMin: 0, suggestedMax: 100,
+            title: { display: true, text: '%' },
+            grid: { color: 'rgba(148,163,184,.12)' }
+          }
+        },
+        plugins: {
+          legend: { display: true },
+          tooltip: {
+            callbacks: {
+              title: items => {
+                const d = items[0].parsed.x;
+                return new Date(d).toLocaleString('pl-PL', { weekday:'short', day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' });
+              },
+              label: item => ` ${item.dataset.label}: ${item.parsed.y?.toFixed?.(1) ?? '—'}%`
+            }
+          }
+        }
+      }
+    });
+
+    // ETA
+    const etaBox = document.getElementById('eta');
+    if (fc.eta_days_to_thresh != null) {
+      const hours = (fc.eta_days_to_thresh*24).toFixed(1);
+      const when  = fc.eta_timestamp_utc
+        ? new Date(fc.eta_timestamp_utc).toLocaleString('pl-PL')
+        : '';
+      etaBox.textContent = `ETA do progu: ~ ${hours} h (ok. ${when})`;
+    } else {
+      etaBox.textContent = `ETA do progu: brak (powyżej progu lub brak modelu)`;
+    }
+  } catch(e){
+    console.error(e);
+  }
+}
+renderChart();
+setInterval(renderChart, 5*60*1000);
+</script>
+
 </body>
 </html>
