@@ -5,7 +5,7 @@ import serial
 from serial.serialutil import SerialException
 
 # --- PORT / URZĄDZENIE ---
-PORT = "/dev/ttyUSB0"
+PORT = "COM3"
 BAUD = 115200
 DEVICE_ID = "gabiplant-1"
 

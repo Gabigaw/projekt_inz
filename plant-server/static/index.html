@@ -155,7 +155,9 @@
   <h2 style="margin:0 0 12px">Wilgotność – ostatni tydzień</h2>
   <canvas id="moistChart" height="120"></canvas>
   <div id="eta" class="small" style="margin-top:8px;"></div>
+  <div id="eta-ml" class="small" style="margin-top:4px;"></div>
 </div>
+
 
 <!-- Chart.js CDN -->
 <!-- 1) Chart.js -->
@@ -264,17 +266,40 @@ async function renderChart(){
       }
     });
 
-    // ETA
+    // ETA – model liniowy
     const etaBox = document.getElementById('eta');
     if (fc.eta_days_to_thresh != null) {
-      const hours = (fc.eta_days_to_thresh*24).toFixed(1);
+      const hours = (fc.eta_days_to_thresh * 24).toFixed(1);
       const when  = fc.eta_timestamp_utc
         ? new Date(fc.eta_timestamp_utc).toLocaleString('pl-PL')
         : '';
-      etaBox.textContent = `ETA do progu: ~ ${hours} h (ok. ${when})`;
+      etaBox.textContent = `ETA (model liniowy): ~ ${hours} h (ok. ${when})`;
     } else {
-      etaBox.textContent = `ETA do progu: brak (powyżej progu lub brak modelu)`;
+      etaBox.textContent = `ETA (model liniowy): brak (powyżej progu lub brak modelu)`;
     }
+
+    // ETA – prognoza ML
+    const etaMlBox = document.getElementById('eta-ml');
+    const ml = fc.ml;
+    if (ml && ml.predicted_pct_in_1h != null) {
+      const pred = ml.predicted_pct_in_1h.toFixed(1);
+      let line = `Prognoza ML: za 1 h wilgotność ≈ ${pred}% (regresor: ${ml.regressor})`;
+
+      if (ml.will_cross_thresh_in_warn_window === true) {
+        const warnH = ml.warn_h ?? 6;
+        const thr = ml.thresh_on;
+        const thrTxt = (typeof thr === 'number') ? thr.toFixed(1) : thr;
+        line += ` • W ciągu ${warnH} h może spaść poniżej progu ${thrTxt}%`;
+      } else if (ml.will_cross_thresh_in_warn_window === false) {
+        const warnH = ml.warn_h ?? 6;
+        line += ` • W ciągu ${warnH} h nie powinna spaść poniżej progu`;
+      }
+
+      etaMlBox.textContent = line;
+    } else {
+      etaMlBox.textContent = 'Prognoza ML: brak (model niedostępny lub zbyt mało danych).';
+    }
+
   } catch(e){
     console.error(e);
   }

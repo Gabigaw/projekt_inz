@@ -10,7 +10,15 @@ plant-logger/data/forecast.json
 plant-logger/data/measurements_*.csv
 plant-logger/data/*.log
 
+# artefakty ML (modele, metryki itd.)
+plant-logger/data/ml/
+*.pkl
+
 # cache/bajery
 __pycache__/
 *.pyc
 logs/
+
+# potencjalne sekrety
+.env
+*.env
